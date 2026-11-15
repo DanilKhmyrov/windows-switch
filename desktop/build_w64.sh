@@ -26,6 +26,8 @@ trap 'fusermount -u "$MNT" 2>/dev/null || true' EXIT
 mkdir -p "$MNT/Windows/Panther" "$MNT/swagent"
 cp "$HERE/unattend64.xml" "$MNT/Windows/Panther/unattend.xml"
 cp "$HERE/boot64.cmd" "$MNT/swagent/boot.cmd"
+# service host for swagent (desktop/swagentsvc.c): reports to the SCM, so boot no longer waits 45 s
+cp "$HERE/swagentsvc.exe" "$MNT/swagent/swagentsvc.exe"
 cp "$HERE/setup64.cmd" "$MNT/swagent/setup.cmd"
 cp "$HERE/findagent64.cmd" "$MNT/swagent/findagent.cmd"
 cp "$HERE/copylogs.cmd" "$MNT/swagent/copylogs.cmd"
@@ -63,7 +65,7 @@ Windows Registry Editor Version 5.00
 "Start"=dword:00000002
 "ErrorControl"=dword:00000000
 "ObjectName"="LocalSystem"
-"ImagePath"=str(2):"C:\\Windows\\System32\\cmd.exe /c start /b C:\\Windows\\System32\\cmd.exe /c C:\\swagent\\boot.cmd"
+"ImagePath"=str(2):"C:\\swagent\\swagentsvc.exe C:\\Windows\\System32\\cmd.exe /c C:\\swagent\\boot.cmd"
 
 [HKEY_LOCAL_MACHINE\SYSTEM\ControlSet001\Control\CrashControl]
 "DisplayParameters"=dword:00000001
