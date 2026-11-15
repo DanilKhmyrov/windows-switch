@@ -193,6 +193,17 @@ foreach ($s in $services) {
     Log "service $s start $start -> 4"; $changed++
 }
 
+# Services an older version of this script turned off but this one keeps (Windows Update, Delivery
+# Optimization and the update orchestrator before 2026-11-15): back to their saved start value.
+if (-not $fresh) {
+    foreach ($p in @($backup.services.PSObject.Properties)) {
+        if ($services -contains $p.Name) { continue }
+        Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\$($p.Name)" -Name Start -Value $p.Value -ErrorAction SilentlyContinue
+        $backup.services.PSObject.Properties.Remove($p.Name)
+        Log "service $($p.Name) no longer managed, start back to $($p.Value)"; $changed++
+    }
+}
+
 foreach ($t in $tasks) {
     $path = $t.Substring(0, $t.LastIndexOf('\') + 1); $name = $t.Substring($t.LastIndexOf('\') + 1)
     $task = Get-ScheduledTask -TaskPath $path -TaskName $name -ErrorAction SilentlyContinue
