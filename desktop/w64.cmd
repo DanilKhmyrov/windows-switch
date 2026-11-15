@@ -117,6 +117,7 @@ call :gpureport
 call :perf %1
 call :gpuprobe %1
 call :gpuvk %1
+call :tune %1
 echo -- system >> %LOG%
 wmic cpu get NumberOfLogicalProcessors,CurrentClockSpeed >> %LOG% 2>&1
 wmic OS get FreePhysicalMemory,TotalVisibleMemorySize >> %LOG% 2>&1
@@ -393,6 +394,19 @@ goto :eof
 
 rem One-time Vulkan triangle test with NVK (GPU Test loader only) when agent\gpuvk\run.flag exists:
 rem gpuvk.ps1 installs the native-submission GPU driver and writes agent\gpuvk\result.txt.
+:tune
+rem Lightweight Windows (tune.ps1): agent\tune.flag applies it on every boot (each step checks
+rem first), agent\untune.flag puts everything back from C:\swagent\tune-backup.json.
+if exist %1:\agent\untune.flag (
+  echo -- untune >> %LOG%
+  powershell -NoProfile -ExecutionPolicy Bypass -File %1:\agent\tune.ps1 %1:\agent undo >> %LOG% 2>&1
+  goto :eof
+)
+if not exist %1:\agent\tune.flag goto :eof
+echo -- tune >> %LOG%
+powershell -NoProfile -ExecutionPolicy Bypass -File %1:\agent\tune.ps1 %1:\agent >> %LOG% 2>&1
+goto :eof
+
 :gpuvk
 if not exist %1:\agent\gpuvk\run.flag goto :eof
 echo -- gpuvk >> %LOG%
