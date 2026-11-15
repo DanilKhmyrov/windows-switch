@@ -196,7 +196,7 @@ rem Package on the boot partition in agent\wifi: switchwifi.sys/.inf, the board 
 rem wifi_sign.ps1 and Inf2Cat from the WDK (inf2cat\). The catalog is made here and signed with
 rem test certificates the console makes for itself (wifi_sign.ps1), then the package is installed
 rem with pnputil once per driver build (marker: the staged copy in C:\swagent\wifi plus
-rem installed-local.ok).
+rem installed-v2.ok; the name changed when the cleanup below removed a fresh 0.5.7 install).
 :wifi
 if not exist %1:\agent\wifi\switchwifi.inf goto :eof
 ver | find "10.0.22" >nul || goto :eof
@@ -206,7 +206,7 @@ set FW=C:\Windows\System32\drivers\SwitchWOA
 if not exist %FW% mkdir %FW%
 copy /y %1:\agent\wifi\brcmfmac4356A3-pcie.bin %FW%\ >> %LOG% 2>&1
 copy /y %1:\agent\wifi\brcmfmac4356A3-pcie.txt %FW%\ >> %LOG% 2>&1
-if exist %WD%\installed-local.ok fc /b %1:\agent\wifi\switchwifi.sys %WD%\switchwifi.sys >nul 2>&1 && goto :wifireport
+if exist %WD%\installed-v2.ok fc /b %1:\agent\wifi\switchwifi.sys %WD%\switchwifi.sys >nul 2>&1 && goto :wifireport
 if exist %WD% rmdir /s /q %WD%
 mkdir %WD%
 copy /y %1:\agent\wifi\switchwifi.inf %WD%\ >> %LOG% 2>&1
@@ -226,13 +226,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File %1:\agent\wifi\wifi_sign.ps1
 )
 pnputil /add-driver %WD%\switchwifi.inf /install >> %LOG% 2>&1
 echo pnputil exit %errorlevel% >> %LOG%
-if %errorlevel% equ 0 echo ok > %WD%\installed-local.ok
-if %errorlevel% equ 3010 echo ok > %WD%\installed-local.ok
+if %errorlevel% equ 0 echo ok > %WD%\installed-v2.ok
+if %errorlevel% equ 3010 echo ok > %WD%\installed-v2.ok
 rem Reboot once after a new driver: Windows restarts the device in place, and a stopped
 rem BCM4356 needs the fresh preparation that UEFI does at boot (scan works, joining fails).
-if exist %WD%\installed-local.ok set WIFIREBOOT=1
+if exist %WD%\installed-v2.ok set WIFIREBOOT=1
 :wifireport
-if exist %1:\agent\wifi\wifi_clean.ps1 powershell -NoProfile -ExecutionPolicy Bypass -File %1:\agent\wifi\wifi_clean.ps1 >> %LOG% 2>&1
+rem Not right after an install: until the reboot the device still shows the old package, and the
+rem new one would be taken for the leftover (that removed 0.5.7 on 2026-11-15).
+if not defined WIFIREBOOT if exist %1:\agent\wifi\wifi_clean.ps1 powershell -NoProfile -ExecutionPolicy Bypass -File %1:\agent\wifi\wifi_clean.ps1 >> %LOG% 2>&1
 reg query "HKLM\SYSTEM\CurrentControlSet\Enum\ACPI\SWOA0D01" /s >> %LOG% 2>&1
 sc query switchwifi >> %LOG% 2>&1
 pnputil /enum-devices /instanceid "ACPI\SWOA0D01\0" /drivers >> %LOG% 2>&1
