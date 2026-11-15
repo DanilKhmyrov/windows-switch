@@ -42,7 +42,7 @@ UEFI, and UEFI boots a regular Windows Boot Manager from the SD card.
 | Touch screen | yes, multi-touch (`drivers/swhid`) | yes, same driver built for ARM64 | yes, same ARM64 binary |
 | Battery, charger, fan, overheat shutdown | yes (`drivers/swbatt`) | yes, same driver built for ARM64 | yes, same ARM64 binary |
 | CPU / RAM clocks | 1785 MHz at 1120 mV / ~1600 MHz | same UEFI code | same UEFI code |
-| Display | GOP framebuffer (Basic Display), portrait | same | same |
+| Display | GOP framebuffer (Basic Display), portrait | same | same; the "GPU Desktop" entry moves the desktop to the GPU (portrait only) |
 | Wi-Fi (BCM4356 on PCIe) | no | no (WiFiCx needs Windows 11) | **yes**: 2.4 and 5 GHz (802.11ac), WPA2, Internet ([details](#wi-fi-windows-11)) |
 | Bluetooth (BCM4356A3 on UART-D) | no | no | **yes**: a Bluetooth mouse works ([details](#bluetooth-windows-11)) |
 | Speaker / headphones (ALC5639 on I2S1) | no | no | **yes**: speaker and headphones, switched when plugged in ([details](#audio-windows-11)) |
@@ -51,7 +51,7 @@ UEFI, and UEFI boots a regular Windows Boot Manager from the SD card.
 | Shut down from Windows | no | the console powers off (shim, PMIC) | the console powers off (shim, PMIC) |
 | Clock | no | no | the PMIC RTC: correct time at boot without network, once Windows has synced once |
 | USB (USB-C port) | no | no | **yes**: a wireless mouse receiver through an OTG adapter, port powered by the console ([details](#usb-windows-11)) |
-| GPU (GM20B) | no | no | **experimental**: an external render driver starts and powers the GPU, nothing is drawn with it yet ([details](#gpu-experimental-windows-11)) |
+| GPU (GM20B) | no | no | **experimental**: mesa-switch-woa's WDDM driver with Direct3D on Mesa NVK draws the desktop and apps; Vulkan works; it can still hang under heavy load ([details](#gpu-experimental-windows-11), [video](https://www.youtube.com/watch?v=yo2r46_bz38)) |
 | Remote access | no | no | optional OpenSSH server, key login over Wi-Fi ([details](#ssh-windows-11)) |
 
 Windows 11 24H2 and later will not run: they need ARMv8.1 atomics, which the Cortex-A57 lacks.
@@ -694,7 +694,12 @@ sudo ./desktop/put_bl33.sh disk4 <card size in bytes> uefi/out/bl33-64.bin wp64
   Falcon mailbox.
 - SD: avoid the retried read at the UHS switch. Windows 10 ARM64 loader with the 48 MHz fix.
 - Wi-Fi: find why it drops (it does so under Bluetooth load, e.g. two Joy-Cons).
-- GPU: Mesa NVK and a first rendered triangle on the OLED.
+- GPU: follow mesa-switch-woa (landscape rotation, the concurrent-start hang, GPU DVFS through
+  our power bridge); keep the console's GPU clock at the driver's low-power 460.8 MHz until then.
+- Power: CPU frequency scaling and sleep, for battery life.
+- Windows servicing: Windows does not find its system partition (BCD), so language packs and
+  larger updates fail.
+- A clean-card installer tested on a second console.
 - Audio: microphone. Wi-Fi: throughput, sleep, no reboot after a driver update.
 - ARM32 on 4 cores through the same PSCI trapping (needs an AArch32 trap path).
 - Test `setupwatch.cmd` on a fresh Windows 11 install.
