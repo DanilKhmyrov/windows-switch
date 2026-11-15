@@ -663,6 +663,13 @@ static BOOLEAN CodecMute(UCHAR reg, BOOLEAN mute)
 #define BRIDGE_QUERY_ADDRESS 0x100u
 #define BRIDGE_QUERY_PLLP   0x101u
 #define BRIDGE_QUERY_TEMP   0x102u
+// Added by the driver on 2026-11-14 (mesa-switch-woa c0c6647, windows/pmic.h) for GPU DVFS.
+#define BRIDGE_QUERY_EMC_KHZ     0x103u
+#define BRIDGE_QUERY_DVFS_POLICY 0x104u
+#define BRIDGE_REPORT_GPU_KHZ    0x105u     // writes: GPU clock, rail uV, status word, protocol id
+#define BRIDGE_REPORT_GPU_UV     0x106u
+#define BRIDGE_REPORT_GPU_STATUS 0x107u
+#define BRIDGE_REPORT_ABI        0x108u
 #define I2C5_PHYS           0x7000D000ULL
 #define GPU_PMIC_EN_CTRL    0x06
 #define GPU_PMIC_M1_VOUT    0x23
@@ -683,6 +690,7 @@ static PKEVENT g_i2c5Lock;
 static HANDLE g_i2c5LockHandle;
 static UCHAR g_gpuPmic;                     // 0x31 or 0x33 once found
 static volatile LONG g_socC = 255;          // last SoC temperature, 255 = unknown
+static volatile LONG g_gpuReport[4];        // GPU driver reports: kHz, uV, status, protocol id
 
 // The same named event as swhid: one I2C5 user at a time. A wait that times out (another driver
 // stuck) proceeds and is logged rather than blocking the caller for good.
@@ -754,6 +762,41 @@ static BOOLEAN PmicWrite(UCHAR addr, UCHAR reg, UCHAR value)
     return ok;
 }
 
+// I2C5 is shared, and a single transfer to the GPU PMIC can fail (2026-11-14: the M1 enable read
+// failed once, so the GPU driver rolled back with "device not ready"). Reads and writes of the
+// known PMIC are retried; a repeated write of the same value is harmless.
+static volatile LONG g_i2cRetries;
+
+static BOOLEAN PmicReadRetry(UCHAR addr, UCHAR reg, UCHAR *value)
+{
+    ULONG attempt;
+    LARGE_INTEGER pause;
+
+    for (attempt = 0; attempt < 3; attempt++) {
+        if (PmicRead(addr, reg, value))
+            return TRUE;
+        InterlockedIncrement(&g_i2cRetries);
+        pause.QuadPart = -10000LL * 2;
+        KeDelayExecutionThread(KernelMode, FALSE, &pause);
+    }
+    return FALSE;
+}
+
+static BOOLEAN PmicWriteRetry(UCHAR addr, UCHAR reg, UCHAR value)
+{
+    ULONG attempt;
+    LARGE_INTEGER pause;
+
+    for (attempt = 0; attempt < 3; attempt++) {
+        if (PmicWrite(addr, reg, value))
+            return TRUE;
+        InterlockedIncrement(&g_i2cRetries);
+        pause.QuadPart = -10000LL * 2;
+        KeDelayExecutionThread(KernelMode, FALSE, &pause);
+    }
+    return FALSE;
+}
+
 static VOID LogGpu(const CHAR *what, ULONG reg, ULONG value)
 {
     static const CHAR digits[] = "0123456789ABCDEF";
@@ -779,19 +822,44 @@ static NTSTATUS BridgeRequest(BRIDGE_REQUEST *r)
 
     if (r->address == 0) {
         switch (r->reg) {
-        case BRIDGE_QUERY_ADDRESS:
-            if (g_gpuPmic == 0) {
+        case BRIDGE_QUERY_ADDRESS: {
+            ULONG round;
+
+            // Exactly one of 0x31/0x33 answers; a transient bus error can make the probe ambiguous,
+            // so it is repeated a few times before giving up.
+            for (round = 0; g_gpuPmic == 0 && round < 3; round++) {
                 BOOLEAN at31 = PmicRead(0x31, GPU_PMIC_M1_VOUT, &value);
                 BOOLEAN at33 = PmicRead(0x33, GPU_PMIC_M1_VOUT, &value);
-                if (at31 == at33)
-                    return STATUS_DEVICE_NOT_READY;
-                g_gpuPmic = at31 ? 0x31 : 0x33;
-                LogGpu("pmic", 0, g_gpuPmic);
+                if (at31 != at33) {
+                    g_gpuPmic = at31 ? 0x31 : 0x33;
+                    LogGpu("pmic", 0, g_gpuPmic);
+                } else {
+                    InterlockedIncrement(&g_i2cRetries);
+                }
             }
+            if (g_gpuPmic == 0)
+                return STATUS_DEVICE_NOT_READY;
             r->value = g_gpuPmic;
             return STATUS_SUCCESS;
+        }
         case BRIDGE_QUERY_TEMP:
             r->value = (ULONG) g_socC;
+            return STATUS_SUCCESS;
+        case BRIDGE_QUERY_EMC_KHZ:
+            r->value = 1600000;             // our UEFI runs the DRAM at 1600 MHz
+            return STATUS_SUCCESS;
+        case BRIDGE_QUERY_DVFS_POLICY:
+            // Mode 0, sequence 0: the driver keeps its fixed boot clock (no GPU DVFS yet). Answering
+            // at all makes it send its live clock/voltage reports below, which go into our log.
+            r->value = 0;
+            return STATUS_SUCCESS;
+        case BRIDGE_REPORT_GPU_KHZ:
+        case BRIDGE_REPORT_GPU_UV:
+        case BRIDGE_REPORT_GPU_STATUS:
+        case BRIDGE_REPORT_ABI:
+            if (!r->write)
+                return STATUS_INVALID_PARAMETER;
+            InterlockedExchange(&g_gpuReport[r->reg - BRIDGE_REPORT_GPU_KHZ], (LONG) r->value);
             return STATUS_SUCCESS;
         case BRIDGE_QUERY_PLLP: {
             PHYSICAL_ADDRESS address;
@@ -812,7 +880,7 @@ static NTSTATUS BridgeRequest(BRIDGE_REQUEST *r)
     if (g_gpuPmic == 0 || r->address != g_gpuPmic || r->reg > 0xFF)
         return STATUS_ACCESS_DENIED;
     if (!r->write) {
-        if (!PmicRead(g_gpuPmic, (UCHAR) r->reg, &value))
+        if (!PmicReadRetry(g_gpuPmic, (UCHAR) r->reg, &value))
             return STATUS_IO_DEVICE_ERROR;
         r->value = value;
         return STATUS_SUCCESS;
@@ -826,7 +894,7 @@ static NTSTATUS BridgeRequest(BRIDGE_REQUEST *r)
         }
     } else if (r->reg == GPU_PMIC_EN_CTRL) {
         // Only the M1 enable bit may change; M2-M4 (DRAM, CPU) keep their current state.
-        if (!PmicRead(g_gpuPmic, GPU_PMIC_EN_CTRL, &now))
+        if (!PmicReadRetry(g_gpuPmic, GPU_PMIC_EN_CTRL, &now))
             return STATUS_IO_DEVICE_ERROR;
         if (((now ^ r->value) & ~GPU_PMIC_M1_EN) != 0) {
             LogGpu("refused EN_CTRL", r->reg, r->value);
@@ -836,7 +904,7 @@ static NTSTATUS BridgeRequest(BRIDGE_REQUEST *r)
         LogGpu("refused write", r->reg, r->value);
         return STATUS_ACCESS_DENIED;
     }
-    if (!PmicWrite(g_gpuPmic, (UCHAR) r->reg, (UCHAR) r->value))
+    if (!PmicWriteRetry(g_gpuPmic, (UCHAR) r->reg, (UCHAR) r->value))
         return STATUS_IO_DEVICE_ERROR;
     LogGpu("write", r->reg, r->value);
     return STATUS_SUCCESS;
@@ -1408,6 +1476,16 @@ VOID PollThread(PVOID context)
             LogHex8(g_pdo);
             LogText("\r\n");
             LogShim();
+            if (g_gpuPmic != 0 || g_i2cRetries != 0) {
+                LogPair("gpu: khz", g_gpuReport[0]);
+                LogPair("uv", g_gpuReport[1]);
+                LogText("status=");
+                LogHex8((ULONG) g_gpuReport[2]);
+                LogText(" abi=");
+                LogHex8((ULONG) g_gpuReport[3]);
+                LogPair(" i2c_retries", g_i2cRetries);
+                LogText("\r\n");
+            }
             SaveLog();
         }
 

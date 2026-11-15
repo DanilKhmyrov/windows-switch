@@ -4,8 +4,9 @@
 #   kmd/   WDDM display build of the GPU driver with gated native submission
 #          (tools/build.py --display --native-test-version N), unsigned
 #   icd/   the matching NVK Vulkan ICD (build_icd.py)
-#   umd/   tgd3d, the Direct3D 10/11 user-mode driver on Vulkan (build_tgd3d.py, CPU-sync
-#          control mode as in the author's tested packages)
+#   umd/   tgd3d, the Direct3D 10/11 user-mode driver on Vulkan (build_tgd3d.py); CPUSYNC=1 (default)
+#          builds the CPU-sync control mode, CPUSYNC=0 the GPU-bridge mode
+# GPU_KHZ=460800 builds the low-power fixed GPU clock (default 729600).
 #
 #   drivers/nvk/build_desktop.sh TOOLCHAIN_DIR MESA_TGD3D OUT_DIR [N]
 #
@@ -17,7 +18,7 @@ N="${4:-201}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 docker run --rm -v "$T:$T" -v "$OUT:/out" -v "$HERE:/nvk:ro" -e T="$T" -e MESA="$MESA" -e N="$N" \
     -e JOBS="${JOBS:-6}" -e SKIP_KMD="${SKIP_KMD:-0}" -e SKIP_ICD="${SKIP_ICD:-0}" \
-    -e SKIP_UMD="${SKIP_UMD:-0}" switch-wp-nvk bash -c '
+    -e SKIP_UMD="${SKIP_UMD:-0}" -e GPU_KHZ="${GPU_KHZ:-729600}" -e CPUSYNC="${CPUSYNC:-1}" switch-wp-nvk bash -c '
 set -euo pipefail
 git config --global --add safe.directory "*"
 ln -sf "$(ls /opt/llvm-mingw/bin/clang-[0-9]* | head -1)" /usr/local/bin/clang-cl
@@ -39,7 +40,7 @@ if [ "${SKIP_KMD:-0}" != 1 ]; then
     python3 "$MESA/tegra-x1-wddm/tools/build.py" --mesa "$MESA" --wdk-include "$W" --sdk-include "$S" \
         --out /out/kmd --cc clang --clang-cl clang-cl --lib llvm-lib --link lld-link \
         --dlltool llvm-dlltool --display --native-test-version "$N" --gr-firmware "$FW" \
-        --acr-firmware "$FW" >/out/kmd.log 2>&1 || { tail -30 /out/kmd.log; exit 1; }
+        --acr-firmware "$FW" --render-gpu-khz "$GPU_KHZ" >/out/kmd.log 2>&1 || { tail -30 /out/kmd.log; exit 1; }
 fi
 if [ "${SKIP_ICD:-0}" != 1 ]; then
 rm -rf /out/icd
@@ -51,7 +52,7 @@ fi
 if [ "${SKIP_UMD:-0}" != 1 ]; then
 rm -rf /out/umd
 python3 "$MESA/tegra-x1-wddm/tools/build_tgd3d.py" --out /out/umd --cross-file /nvk/windows-arm64.ini \
-    --sdk-include "$S" --wdk-include "$W" --cpu-sync-control >/out/umd.log 2>&1 || { grep -E "error|FAILED" /out/umd.log | head -20; exit 1; }
+    --sdk-include "$S" --wdk-include "$W" $([ "$CPUSYNC" = 1 ] && echo --cpu-sync-control) >/out/umd.log 2>&1 || { grep -E "error|FAILED" /out/umd.log | head -20; exit 1; }
 fi
 ls -la /out/kmd/kit/tegragpurender /out/icd/libvulkan_nouveau.dll /out/umd/TegraGpuD3DVk.dll
 '
