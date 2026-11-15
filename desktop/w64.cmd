@@ -44,6 +44,8 @@ call :noupdate
 call :defender %1
 copy /y %~f0 C:\swagent\w64-applied.cmd >nul 2>&1
 :afteronce
+call :svchost %1
+call :bcdfix
 call :removewin10 %1
 call :dumpcopy %1
 call :ssh %1
@@ -396,6 +398,39 @@ goto :eof
 
 rem One-time Vulkan triangle test with NVK (GPU Test loader only) when agent\gpuvk\run.flag exists:
 rem gpuvk.ps1 installs the native-submission GPU driver and writes agent\gpuvk\result.txt.
+:bcdfix
+rem A BCD built from BCD-Template lacks the system-store marks (Description\System and
+rem TreatAsSystem); the kernel then refuses it and bcdedit, language packs and servicing fail.
+rem Added here once the boot partition is active (see README, Lessons learned): then Windows
+rem finds its EFI system partition and mountvol /S can reach the BCD.
+bcdedit /enum {bootmgr} >nul 2>&1 && goto :eof
+mountvol S: /S >nul 2>&1 || (
+  echo -- bcd: not openable and no EFI system partition found: mark the boot partition active >> %LOG%
+  goto :eof
+)
+if exist S:\EFI\Microsoft\Boot\BCD (
+  echo -- bcd: marking the store as the system store >> %LOG%
+  reg load HKLM\SWBCD S:\EFI\Microsoft\Boot\BCD >> %LOG% 2>&1
+  reg add HKLM\SWBCD\Description /v System /t REG_DWORD /d 1 /f >> %LOG% 2>&1
+  reg add HKLM\SWBCD\Description /v TreatAsSystem /t REG_DWORD /d 1 /f >> %LOG% 2>&1
+  reg unload HKLM\SWBCD >> %LOG% 2>&1
+)
+mountvol S: /D >nul 2>&1
+bcdedit /enum {bootmgr} >> %LOG% 2>&1
+goto :eof
+
+:svchost
+rem The swagent service host (swagentsvc.exe, desktop/swagentsvc.c). Images built before
+rem 2026-11-15 ran cmd.exe as the service binary, and every boot waited 45 s for it (event 7009).
+rem From agent\swagentsvc.exe: copied when it differs, ImagePath switched once; next boot uses it.
+if not exist %1:\agent\swagentsvc.exe goto :eof
+fc /b %1:\agent\swagentsvc.exe C:\swagent\swagentsvc.exe >nul 2>&1 || copy /y %1:\agent\swagentsvc.exe C:\swagent\swagentsvc.exe >> %LOG% 2>&1
+reg query HKLM\SYSTEM\CurrentControlSet\Services\swagent /v ImagePath | find /i "swagentsvc.exe" >nul && goto :eof
+if not exist C:\swagent\swagentsvc.exe goto :eof
+echo -- swagent: service host installed >> %LOG%
+reg add HKLM\SYSTEM\CurrentControlSet\Services\swagent /v ImagePath /t REG_EXPAND_SZ /d "C:\swagent\swagentsvc.exe C:\Windows\System32\cmd.exe /c C:\swagent\boot.cmd" /f >> %LOG% 2>&1
+goto :eof
+
 :tune
 rem Lightweight Windows (tune.ps1): agent\tune.flag applies it on every boot (each step checks
 rem first), agent\untune.flag puts everything back from C:\swagent\tune-backup.json.
