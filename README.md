@@ -662,6 +662,17 @@ sudo ./desktop/put_bl33.sh disk4 <card size in bytes> uefi/out/bl33-64.bin wp64
 
 ## Lessons learned
 
+- **Windows could not open its own BCD** ("The requested system device cannot be found"), so
+  language packs and Windows servicing failed at the boot-file step. Two things were missing,
+  both found by disassembling the console's `ntoskrnl.exe` with Microsoft's public symbols:
+  - On an MBR disk the kernel accepts the system partition only if it is **active**
+    (`SiValidateSystemPartition` checks the boot indicator; the partition type is only checked on
+    GPT). The FAT partition with `EFI\Microsoft\Boot` must carry the 0x80 flag.
+  - The BCD must be marked as the system store (`Description\System` and
+    `Description\TreatAsSystem` = 1), as `bcdboot` does; a BCD built from `BCD-Template` lacks
+    them and `BiIsSystemStore` rejects it with 0xC0000098. `desktop/bcdlib.py` now writes them and
+    `desktop/setup_card.py` sets the flag.
+
 - **Early UEFI hang after mark 6** on Mariko: BPMP DRAM training races UEFI start. Fixed with a
   delay in the shim.
 - **All EL2 traps hung**: `SP_EL2` was never set because `SPSel` was 0. Set `SPSel=1` before

@@ -13,6 +13,7 @@ import bcdlib as p
 L = p.LOADER
 out = open(sys.argv[2], "w")
 out.write("Windows Registry Editor Version 5.00\n\n")
+out.write(p.system_store())
 for code in ("11000001", "21000001"):
     out.write(p.element(L, code, p.device(10815)))
 out.write(f'[HKEY_LOCAL_MACHINE\\BCD\\Objects\\{L}\\Elements\\12000002]\n"Element"="\\\\windows\\\\system32\\\\winload.efi"\n\n')

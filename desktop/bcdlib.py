@@ -46,6 +46,14 @@ def list_element(obj, code, items):
             f'"Element"=hex(7):{hexlist(value)}\n\n')
 
 
+def system_store():
+    """Marks the store as the system store, as bcdboot does. Without these values the kernel's
+    BiIsSystemStore rejects the BCD it loads from the EFI system partition: bcdedit then fails with
+    0xC0000098, and Windows servicing (language packs, boot file updates) cannot reach the BCD."""
+    return ('[HKEY_LOCAL_MACHINE\\BCD\\Description]\n"System"=dword:00000001\n'
+            '"TreatAsSystem"=dword:00000001\n\n')
+
+
 def object_type(obj, kind):
     """New BCD object: its key, Description with the type, and an empty Elements key."""
     base = f'HKEY_LOCAL_MACHINE\\BCD\\Objects\\{obj}'

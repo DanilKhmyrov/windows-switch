@@ -86,6 +86,12 @@ def partition(args):
         raise SystemExit(f"Unexpected layout from diskutil: {parts}")
     mbr = bytearray(mbr)
     mbr[446 + 32 + 4] = 0x07                  # partition 3: NTFS
+    # Partition 2 (WINBOOT, the boot manager and BCD) active, the others not: on an MBR disk the
+    # kernel takes the system partition only if it is active (SiValidateSystemPartition checks
+    # the boot indicator). Without it Windows cannot open its BCD (bcdedit: "system device cannot
+    # be found") and servicing fails. Hekate and the FAT loaders ignore the flag.
+    for slot in range(4):
+        mbr[446 + 16 * slot] = 0x80 if slot == 1 else 0x00
     # diskutil leaves the disk signature at 0; Windows would then write its own and the BCD
     # (which refers to the disk by signature) would no longer match.
     if struct.unpack_from("<I", mbr, 440)[0] == 0:

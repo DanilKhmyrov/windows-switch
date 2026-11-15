@@ -18,6 +18,7 @@ signature, os_mib, esp_mib = int(sys.argv[3], 0), int(sys.argv[4]), int(sys.argv
 L, B = p.LOADER, p.BOOTMGR
 out = open(sys.argv[2], "w")
 out.write("Windows Registry Editor Version 5.00\n\n")
+out.write(p.system_store())
 # Boot manager: its own partition, default entry = our loader.
 out.write(p.element(B, "11000001", p.device(esp_mib, signature)))
 out.write(p.string_element(B, "23000003", L))
