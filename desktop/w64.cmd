@@ -482,19 +482,19 @@ rem Windows Update off, on every boot (Windows may turn parts of it back on). A 
 rem to 24H2 or later would not boot on the Cortex-A57 (it needs ARMv8.1 atomics), and driver
 rem updates could replace ours. Policies first, then the services and their scheduled tasks.
 :noupdate
-echo -- windows update off >> %LOG%
+rem No automatic updates (and no 24H2, which this CPU cannot run), but Windows Update stays
+rem available on demand: language packs and Windows features are installed through it.
+echo -- windows update: no automatic updates >> %LOG%
 set WU=HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate
 reg add %WU% /v TargetReleaseVersion /t REG_DWORD /d 1 /f >> %LOG% 2>&1
 reg add %WU% /v ProductVersion /t REG_SZ /d "Windows 11" /f >> %LOG% 2>&1
 reg add %WU% /v TargetReleaseVersionInfo /t REG_SZ /d 23H2 /f >> %LOG% 2>&1
 reg add %WU% /v ExcludeWUDriversInQualityUpdate /t REG_DWORD /d 1 /f >> %LOG% 2>&1
-reg add %WU% /v DisableWindowsUpdateAccess /t REG_DWORD /d 1 /f >> %LOG% 2>&1
+reg delete %WU% /v DisableWindowsUpdateAccess /f >> %LOG% 2>&1
 reg add %WU%\AU /v NoAutoUpdate /t REG_DWORD /d 1 /f >> %LOG% 2>&1
 reg add HKLM\SOFTWARE\Policies\Microsoft\Windows\DriverSearching /v SearchOrderConfig /t REG_DWORD /d 0 /f >> %LOG% 2>&1
-for %%S in (wuauserv UsoSvc) do (
-  sc stop %%S >nul 2>&1
-  sc config %%S start= disabled >> %LOG% 2>&1
-)
+rem Manual start (3), not disabled: Install-Language and Add-WindowsCapability start them.
+for %%S in (wuauserv UsoSvc) do reg add HKLM\SYSTEM\CurrentControlSet\Services\%%S /v Start /t REG_DWORD /d 3 /f >> %LOG% 2>&1
 rem The medic service is protected against sc config; its registry value can still be set by SYSTEM.
 reg add HKLM\SYSTEM\CurrentControlSet\Services\WaaSMedicSvc /v Start /t REG_DWORD /d 4 /f >> %LOG% 2>&1
 powershell -NoProfile -Command "foreach ($p in '\Microsoft\Windows\UpdateOrchestrator\', '\Microsoft\Windows\WindowsUpdate\', '\Microsoft\Windows\WaaSMedic\') { Get-ScheduledTask -TaskPath $p -ErrorAction SilentlyContinue | Where-Object State -ne 'Disabled' | ForEach-Object { $t = $_; try { Disable-ScheduledTask -InputObject $t -ErrorAction Stop | Out-Null; 'disabled ' + $t.TaskPath + $t.TaskName } catch { 'kept ' + $t.TaskPath + $t.TaskName } } }" >> %LOG% 2>&1

@@ -5,6 +5,8 @@
 #   powershell -NoProfile -ExecutionPolicy Bypass -File tune.ps1 AGENT_DIR [undo]
 # The original value of every setting is saved once in C:\swagent\tune-backup.json before it is
 # first changed. Kept on purpose: Wi-Fi, Bluetooth, audio, touch keyboard (TabletInputService),
+# Windows Update, Delivery Optimization and the update orchestrator (language packs and Windows
+# features are installed through them; automatic updates stay off by the agent's policies),
 # Windows Firewall, Defender's engine (only its scans and cloud reporting are turned off), SSH,
 # the event log, the Start menu and its search box (only the file indexer is off).
 param([string]$Agent, [string]$Mode = 'apply')
@@ -21,7 +23,6 @@ $services = @(
     'SysMain',           # Superfetch: preloads apps into the scarce RAM, reads the SD in the background
     'DiagTrack',         # telemetry
     'dmwappushservice',  # telemetry push routing
-    'DoSvc',             # Delivery Optimization (peer update downloads; updates are off anyway)
     'MapsBroker',        # offline maps downloads
     'lfsvc',             # geolocation (no GPS)
     'RetailDemo',
@@ -34,8 +35,7 @@ $services = @(
     'XblAuthManager', 'XblGameSave', 'XboxNetApiSvc', 'XboxGipSvc',
     'WpcMonSvc',         # parental controls
     'PhoneSvc',          # telephony
-    'TrkWks',            # distributed link tracking
-    'wuauserv', 'UsoSvc' # Windows Update (the agent turns it off; language installs turn it back on)
+    'TrkWks'             # distributed link tracking
 )
 $tasks = @(
     '\Microsoft\Windows\Application Experience\Microsoft Compatibility Appraiser',
@@ -180,7 +180,7 @@ function Remember($kind, $key, $value) {
 }
 $changed = 0
 
-# Services: Start value 4 = disabled. Protected services (DoSvc, UsoSvc) refuse sc config, but SYSTEM
+# Services: Start value 4 = disabled. Protected services refuse sc config, but SYSTEM
 # can write the registry value.
 foreach ($s in $services) {
     $key = "HKLM:\SYSTEM\CurrentControlSet\Services\$s"

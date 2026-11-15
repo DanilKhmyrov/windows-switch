@@ -425,16 +425,18 @@ Opt-in flag files in `agent\` on the CRASHDUMP partition:
   holds its page file; then remove the partition table entry on another machine and keep the flag:
   the agent only grows C: when the partition is gone.
 - `perf.flag`: one speed measurement, see above.
-- `tune.flag`: a lighter Windows (`desktop/tune.ps1`), checked on every boot. It turns off
-  services that cost the SD card, the 4 GB of RAM or the CPU and give nothing on this console:
-  - the file indexer, Superfetch, telemetry, Delivery Optimization;
+- `tune.flag`: the **Lite** variant (`desktop/tune.ps1`); without it the card is **Full**
+  (Windows as installed, only our drivers and the agent). Lite is checked on every boot and turns
+  off services that cost the SD card, the 4 GB of RAM or the CPU and give nothing on this console:
+  - the file indexer, Superfetch, telemetry;
   - maps, geolocation, error report uploads, compatibility assistant;
-  - printing, biometrics, Insider, Xbox, parental controls, telephony and Windows Update.
+  - printing, biometrics, Insider, Xbox, parental controls, telephony.
   It also disables 18 scheduled tasks (among them the weekly defragmentation of the SD card),
   Widgets, the Chat and Copilot buttons, tips, background apps, Edge's background mode and
   NTFS last-access updates. Every original value is saved in `C:\swagent\tune-backup.json`;
   `untune.flag` puts them back. Kept: Wi-Fi, Bluetooth, audio, the touch keyboard, the
-  firewall, Defender's engine, SSH, the event log and Start-menu search for apps.
+  firewall, Defender's engine, SSH, the event log, Start-menu search for apps, and Windows
+  Update with Delivery Optimization (language packs and Windows features install through them).
   Measured on the test console with the GPU desktop, 17 minutes after boot:
 
   | | before | with `tune.flag` |
@@ -596,14 +598,16 @@ Video of a full run: [youtube.com/watch?v=yo2r46_bz38](https://www.youtube.com/w
 
 ## Windows Update
 
-`w64.cmd` turns Windows Update off on every boot:
+`w64.cmd` stops automatic updates (in Full and Lite alike):
 
 - policies: no automatic updates, the target version pinned to 23H2, no driver updates;
-- `wuauserv`, `UsoSvc` and `WaaSMedicSvc` disabled;
-- the update scheduled tasks disabled.
+- `WaaSMedicSvc` and the update scheduled tasks disabled;
+- `wuauserv` and `UsoSvc` on manual start, so Windows Update still works on demand.
 
 A feature update to 24H2 or later would not boot on this CPU, and driver updates could replace
-ours.
+ours. On-demand servicing works since the BCD fix (see Lessons learned), for example the English
+language pack: `Install-Language en-US -CopyToSettings`, then `Set-WinUILanguageOverride en-US`
+and a new sign-in.
 
 ## SD card layout (MBR)
 
