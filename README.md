@@ -425,6 +425,29 @@ Opt-in flag files in `agent\` on the CRASHDUMP partition:
   holds its page file; then remove the partition table entry on another machine and keep the flag:
   the agent only grows C: when the partition is gone.
 - `perf.flag`: one speed measurement, see above.
+- `tune.flag`: a lighter Windows (`desktop/tune.ps1`), checked on every boot. It turns off
+  services that cost the SD card, the 4 GB of RAM or the CPU and give nothing on this console:
+  - the file indexer, Superfetch, telemetry, Delivery Optimization;
+  - maps, geolocation, error report uploads, compatibility assistant;
+  - printing, biometrics, Insider, Xbox, parental controls, telephony and Windows Update.
+  It also disables 18 scheduled tasks (among them the weekly defragmentation of the SD card),
+  Widgets, the Chat and Copilot buttons, tips, background apps, Edge's background mode and
+  NTFS last-access updates. Every original value is saved in `C:\swagent\tune-backup.json`;
+  `untune.flag` puts them back. Kept: Wi-Fi, Bluetooth, audio, the touch keyboard, the
+  firewall, Defender's engine, SSH, the event log and Start-menu search for apps.
+  Measured on the test console with the GPU desktop, 17 minutes after boot:
+
+  | | before | with `tune.flag` |
+  |---|---|---|
+  | Explorer starts after the kernel | 110 s | 81 s |
+  | RAM in use | 2137 MB | 1727 MB |
+  | commit charge | 2132 MB | 1528 MB |
+  | processes / running services | 139 / 91 | 106 / 78 |
+  | idle disk transfers | 5.2/s | 1.6/s |
+  | idle CPU | 0.6 % | 0.1 % |
+
+  **Transparency and animations are deliberately left on:** with them off, the GPU desktop hung
+  on two boots out of two right after the switch.
 
 Settings that only need to be applied once (power plan, OneDrive, Windows Update, Defender) are
 skipped while `w64.cmd` equals the copy saved after its last full run, so the agent no longer
