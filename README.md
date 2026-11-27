@@ -476,6 +476,12 @@ Notes from getting it to work:
 
 ## GPU (experimental, Windows 11)
 
+**Companion-project update (Switch Lite, 2026-11-27):** PAL4 now reaches a game
+scene and Warcraft III reaches a map through Mesa NVK; the owner's photo shows
+approximately 12 FPS. Frame rates still need optimization and PAL4 audio is
+unresolved. These Lite observations do not constitute OLED game validation.
+[Game report and photograph](docs/lite-game-progress-20261127.md).
+
 The Tegra X1's GPU (GM20B, `GM20B_B` on Mariko) has no Windows driver from NVIDIA. The
 [mesa-switch-woa](https://github.com/ruje0504-2/mesa-switch-woa) project (ruje0504-2) writes one:
 a WDDM/MCDM kernel driver (`tegra-x1-wddm/`) and Mesa NVK for Windows. Their desktop is not
